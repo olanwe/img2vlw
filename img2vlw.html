@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang='en'>
+<!-- 
+Simple Image2VLW converter
+by Oliver Weyhmüller
+
+Version Date
+1.0     2024-04-21
+-->
+<head>
+
+  <meta charset='UTF-8'>
+  <title>Image to VLW converter</title>
+  <style>
+    body {
+  font-family: sans-serif;
+}
+
+form div {
+  padding-bottom: 8px;
+}
+  </style>
+
+</head>
+
+<body>
+  <h1>Image to VLW converter for e-ink displays</h1>
+<p>
+<form>
+  <div>
+  <label for="file">Upload image:</label>
+  <input type="file" accept=".jpg,.jpeg,.png,.gif,.bmp" onchange="upload(this);">
+  </div>
+  <div>
+  <label for="color">Third e-ink color:</label>
+<select id="color" name="color" value="0" onchange="redraw();">
+  <option value="0">none</option>
+  <option value="1">red</option>
+  <option value="2">yellow</option>
+</select> 
+  </div>
+  <div>
+  <label for="maxw">Width (px):</label>
+  <input id="maxw" type="number" value=0 min=0 size=4 onchange="redraw();">
+  <label for="maxh">Height (px):</label>
+  <input id="maxh" type="number" value=0 min=0 size=4 onchange="redraw();">
+  </div>
+  <div>
+  <label for="lumoff">Luminance offset:</label>
+  <input id="lumoff" type="number" value=0 min=-127 max=127 size=4 onchange="redraw();">
+  </div>
+  <div>
+  <input id="download" type="button" value="Download as VLW font" onclick="downloadVlw();" disabled>
+  </div>
+</form>
+</p>
+<p>Image size: <span id="iw">0</span>×<span id="ih">0</span> px (original size <span id="ow">0</span>×<span id="oh">0</span> px)<br/><br/>
+<i>Note: Black color bitmap will be mapped to font-character "0", third color bitmap to character "1".</i></p>
+<hr />
+<p>
+<canvas id=c></canvas>
+</p>
+
+<script>
+const c = document.getElementById("c"),
+  ctx = c.getContext("2d"),
+  image = new Image();
+var  vlwdata = "",
+  vlwfilename = "image.vlw";
+
+function conv(size) {
+  return String.fromCharCode(
+    (size >> 24) & 0xff,
+    (size >> 16) & 0xff,
+    (size >> 8) & 0xff,
+    size & 0xff
+  );
+}
+
+function getDistcol(r1, g1, b1, r2, g2, b2) {
+  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+}
+
+function shiftLum(val, offset) {
+  return(Math.min(Math.max(val + offset, 0), 255));
+}
+
+function processImg() {
+
+  let idata = ctx.getImageData(0, 0, c.width, c.height),
+    buffer = idata.data,
+    len = buffer.length,
+    threshold = 127,
+    i,
+    thirdcol = parseInt(document.getElementById("color").value),
+    lumoff = parseInt(document.getElementById("lumoff").value),
+    distb,
+    distw,
+    distt = 1024, //Off-scale distant by default
+    vlwthird = "";
+  
+  // VLW header
+  vlwdata = conv(thirdcol == 0 ? 1 : 2); // Glyph Count
+  vlwdata += conv(11); // Version (11)
+  vlwdata += conv(c.height); // Font size
+  vlwdata += conv(0); // ignored
+  vlwdata += conv(c.height); // Font ascend (from letter d)
+  vlwdata += conv(0); // Font descend (from letter p)
+  // Character header 1
+  vlwdata += conv(48); // Character: 0
+  vlwdata += conv(c.height); // Height
+  vlwdata += conv(c.width); // Width
+  vlwdata += conv(c.width); // Setwidth
+  vlwdata += conv(c.height); // Topextend
+  vlwdata += conv(0); // Leftextend
+  vlwdata += conv(0); // Padding
+  if (thirdcol) {
+    // Character header 2
+    vlwdata += conv(49); // Character: 1
+    vlwdata += conv(c.height); // Height
+    vlwdata += conv(c.width); // Width
+    vlwdata += conv(c.width); // Setwidth
+    vlwdata += conv(c.height); // Topextend
+    vlwdata += conv(0); // Leftextend
+    vlwdata += conv(0); // Padding
+  }
+  for (i = 0; i < len; i += 4) {
+    buffer[i] = shiftLum(buffer[i], lumoff);
+    buffer[i+1] = shiftLum(buffer[i+1], lumoff);
+    buffer[i+2] = shiftLum(buffer[i+2], lumoff);
+    distw = getDistcol(
+      buffer[i],
+      buffer[i + 1],
+      buffer[i + 2],
+      0xff,
+      0xff,
+      0xff
+    );
+    distb = getDistcol(
+      buffer[i],
+      buffer[i + 1],
+      buffer[i + 2],
+      0x00,
+      0x00,
+      0x00
+    );
+    if (thirdcol) {
+      // Three colors - calculate third color distance
+      distt = getDistcol(
+        buffer[i],
+        buffer[i + 1],
+        buffer[i + 2],
+        0xff,
+        thirdcol == 1 ? 0xff : 0x00,
+        0x00
+      );
+    }
+
+    if (distw < distb && distw < distt) {
+      // White is matching best
+      buffer[i] = 0xff;
+      buffer[i + 1] = 0xff;
+      buffer[i + 2] = 0xff;
+      vlwdata += String.fromCharCode(0x00);
+      if (thirdcol) vlwthird += String.fromCharCode(0x00);
+    } else {
+      if (distb <= distw && distb < distt) {
+        // Black is matching best
+        buffer[i] = 0x00;
+        buffer[i + 1] = 0x00;
+        buffer[i + 2] = 0x00;
+        vlwdata += String.fromCharCode(0xff);
+        if (thirdcol) vlwthird += String.fromCharCode(0x00);
+      } else {
+        // Third color matches best
+        buffer[i] = 0xff;
+        buffer[i + 1] = thirdcol == 1 ? 0x00 : 0xff;
+        buffer[i + 2] = 0x00;
+        vlwdata += String.fromCharCode(0x00);
+        vlwthird += String.fromCharCode(0xff);
+      }
+    }
+  }
+
+  if (thirdcol) {
+    vlwdata += vlwthird; //Add additional bitmap for third color
+  }
+
+  vlwdata += String.fromCharCode(11);
+  vlwdata += "Image";
+  vlwdata += String.fromCharCode(0);
+  vlwdata += String.fromCharCode(11);
+  vlwdata += "Image";
+  vlwdata += String.fromCharCode(0);
+  // update canvas with the resulting bitmap data
+  ctx.putImageData(idata, 0, 0);
+}
+
+function upload(input) {
+  if (input.files && input.files[0]) {
+    vlwfilename = input.files[0].name + ".vlw";
+    const reader = new FileReader();
+    reader.readAsDataURL(input.files[0]);
+    reader.onload = () => {
+      image.src = reader.result;
+      image.onload = () => {
+        redraw();
+      };
+    };
+  }
+}
+
+function redraw() {
+  if(image.width) {
+  document.getElementById('download').disabled = false; // Enable download button
+  let maxw = parseInt(document.getElementById("maxw").value);
+  let maxh = parseInt(document.getElementById("maxh").value);
+
+  let cwidth = image.width,
+    cheight = image.height,
+    resizefactor = 1;
+  if (maxw) {
+    cwidth = maxw;
+    if (!maxh) {
+      resizefactor = maxw / image.width;
+      cheight = image.height * resizefactor;
+    }
+  }
+  if (maxh) {
+    cheight = maxh;
+    if (!maxw) {
+      resizefactor = maxh / image.height;
+      cwidth = image.width * resizefactor;
+    }
+  }
+  cwidth = Math.floor(cwidth);
+  cheight = Math.floor(cheight);
+  document.getElementById("iw").innerHTML = cwidth;
+  document.getElementById("ih").innerHTML = cheight;
+  document.getElementById("ow").innerHTML = image.width;
+  document.getElementById("oh").innerHTML = image.height;
+  c.width = cwidth;
+  c.height = cheight;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, c.width, c.height); // Fill background
+  ctx.drawImage(image, 0, 0, c.width, c.height);
+  processImg();
+  } else {
+   console.log("No image loaded yet!");
+  }
+}
+
+function downloadVlw() {
+  const bl = vlwdata.length;
+  const abuffer = new ArrayBuffer(bl);
+  let chars = new Uint8Array(abuffer);
+  for (let i = 0; i < bl; i++) chars[i] = vlwdata.charCodeAt(i);
+
+  // application/x-zip-compressed - winrar archive
+  // application/x-msdownload - windows executable files
+
+  const file = new File([abuffer], vlwfilename, {
+    type: "application/x-msdownload"
+  });
+
+  const url = URL.createObjectURL(file);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+</script>
+</body>
+</html>
