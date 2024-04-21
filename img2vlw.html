@@ -4,8 +4,9 @@
 Simple Image2VLW converter
 by Oliver Weyhmüller
 
-Version Date
+Version Date       Changes
 1.0     2024-04-21
+1.1     2024-04-21 Swapped yellow/red distance calculation
 -->
 <head>
 
@@ -151,7 +152,7 @@ function processImg() {
         buffer[i + 1],
         buffer[i + 2],
         0xff,
-        thirdcol == 1 ? 0xff : 0x00,
+        thirdcol == 2 ? 0xff : 0x00,
         0x00
       );
     }
