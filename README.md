@@ -1,9 +1,13 @@
 # img2vlw
+
 Simple image to VLW converter for e-ink displays being used with [OpenEPaperLink](https://openepaperlink.de/).
 
-Everything is included in the [img2vlw.html](img2vlw.html) itself. Download it for offline usage or [run it online](http://htmlpreview.github.io/?https://github.com/olanwe/img2vlw/blob/main/img2vlw.html)!
+Everything is included in the [img2vlw.html](img2vlw.html) itself. Download it for offline usage or [run it online](http://htmlpreview.github.io/?https://github.com/olanwe/img2vlw/blob/main/img2vlw.html)!  
+
+*New:* img2vlw will crop the color bitmaps separately to the actually used area to save space. (For example, if you have a large black, white, and red image with only a small red dot on it, img2vlw will only save the area of the dot and store its coordinates in the glyph definition. The displayed image itself, however, will not appear to be cropped at all.)
 
 ## Usage
+
 It is suggested to prepare the image file for conversion first (e.g. by removing unsupported colors, dithering, resizing and cropping the image before feeding it into the converter).
 
 1. Open an image file by clicking on the browse button.
@@ -16,7 +20,8 @@ It is suggested to prepare the image file for conversion first (e.g. by removing
 To display the image in JSON, create a text using the generated font and write character "0" for the black image. If you have selected a third color then write character "1" on top of the first text (at the same position).
 
 Example (for a three-color image):
-```
+
+```json
 [
 { "text": [5, 5, "0", "image.vlw", 1] },
 { "text": [5, 5, "1", "image.vlw", 2] }

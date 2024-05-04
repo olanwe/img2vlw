@@ -7,6 +7,7 @@ by Oliver Weyhmüller
 Version Date       Changes
 1.0     2024-04-21
 1.1     2024-04-21 Swapped yellow/red distance calculation
+1.2     2024-05-04 Added internal bitmap cropping to save space
 -->
 <head>
 
@@ -86,6 +87,59 @@ function shiftLum(val, offset) {
   return(Math.min(Math.max(val + offset, 0), 255));
 }
 
+function autocropVlw(vlwbmp, vlwwidth, vlwheight) {
+// Autocrop bitmap	
+	let i,
+	    posx = 0,
+		posy = 0,
+	    ptop = -1,
+		pheight = 0;
+		pleft = vlwwidth - 1;
+		pwidth = 0,
+		vlwcrop = "",
+		imax = vlwwidth * vlwheight;
+
+// Find boundaries
+	for(i = 0; i < imax; ++i, ++posx) {
+		if(posx >= vlwwidth) {
+		  posx = 0;
+		  ++posy;
+	    }
+	    if(vlwbmp.charCodeAt(i)) { // Non-white pixel
+			if(ptop == -1) // Set top
+				ptop = posy;
+			pheight = posy + 1; // Set height
+			if(pleft > posx) // Set left
+				pleft = posx;
+			if(pwidth <= posx) // Set width
+				pwidth = posx + 1;
+		}
+	}
+	if(ptop == -1) {
+    // Bitmap is completely empty - return empty bitmap	
+		ptop = 0;
+		pleft = 0;
+	} else {
+	// Now we have the boundaries - let's crop the vlw data!
+	for(i = 0, posx = 0, posy = 0; i < (vlwwidth * vlwheight); ++i, ++posx) {
+		if(posx >= vlwwidth) {
+		  posx = 0;
+		  ++posy;
+	    }
+	    if(posx >= pleft && posx < pwidth && posy >= ptop && posy < pheight) {
+		  vlwcrop += vlwbmp[i];// String.fromCharCode(vlwbmp.charCodeAt(i)); // Copy data within boundaries
+		}
+	}
+	}
+	return {
+        posleft: pleft,
+		postop: ptop, 
+		width: pwidth - pleft,
+        height: pheight - ptop,
+		vlw: vlwcrop,
+    }
+}
+
 function processImg() {
 
   let idata = ctx.getImageData(0, 0, c.width, c.height),
@@ -98,35 +152,13 @@ function processImg() {
     distb,
     distw,
     distt = 1024, //Off-scale distant by default
+	vlwbitmap = "",
     vlwthird = "";
   
-  // VLW header
-  vlwdata = conv(thirdcol == 0 ? 1 : 2); // Glyph Count
-  vlwdata += conv(11); // Version (11)
-  vlwdata += conv(c.height); // Font size
-  vlwdata += conv(0); // ignored
-  vlwdata += conv(c.height); // Font ascend (from letter d)
-  vlwdata += conv(0); // Font descend (from letter p)
-  // Character header 1
-  vlwdata += conv(48); // Character: 0
-  vlwdata += conv(c.height); // Height
-  vlwdata += conv(c.width); // Width
-  vlwdata += conv(c.width); // Setwidth
-  vlwdata += conv(c.height); // Topextend
-  vlwdata += conv(0); // Leftextend
-  vlwdata += conv(0); // Padding
-  if (thirdcol) {
-    // Character header 2
-    vlwdata += conv(49); // Character: 1
-    vlwdata += conv(c.height); // Height
-    vlwdata += conv(c.width); // Width
-    vlwdata += conv(c.width); // Setwidth
-    vlwdata += conv(c.height); // Topextend
-    vlwdata += conv(0); // Leftextend
-    vlwdata += conv(0); // Padding
-  }
+
+// Convert to vlw bitmap first
   for (i = 0; i < len; i += 4) {
-    buffer[i] = shiftLum(buffer[i], lumoff);
+	buffer[i] = shiftLum(buffer[i], lumoff);
     buffer[i+1] = shiftLum(buffer[i+1], lumoff);
     buffer[i+2] = shiftLum(buffer[i+2], lumoff);
     distw = getDistcol(
@@ -162,7 +194,7 @@ function processImg() {
       buffer[i] = 0xff;
       buffer[i + 1] = 0xff;
       buffer[i + 2] = 0xff;
-      vlwdata += String.fromCharCode(0x00);
+      vlwbitmap += String.fromCharCode(0x00);
       if (thirdcol) vlwthird += String.fromCharCode(0x00);
     } else {
       if (distb <= distw && distb < distt) {
@@ -170,21 +202,54 @@ function processImg() {
         buffer[i] = 0x00;
         buffer[i + 1] = 0x00;
         buffer[i + 2] = 0x00;
-        vlwdata += String.fromCharCode(0xff);
+        vlwbitmap += String.fromCharCode(0xff);
         if (thirdcol) vlwthird += String.fromCharCode(0x00);
       } else {
         // Third color matches best
         buffer[i] = 0xff;
         buffer[i + 1] = thirdcol == 1 ? 0x00 : 0xff;
         buffer[i + 2] = 0x00;
-        vlwdata += String.fromCharCode(0x00);
+        vlwbitmap += String.fromCharCode(0x00);
         vlwthird += String.fromCharCode(0xff);
       }
     }
   }
-
+  
+  // Crop internal bitmap data
+  const blackcrop = autocropVlw(vlwbitmap, c.width, c.height);
+  const thirdcrop = autocropVlw(vlwthird, c.width, c.height);
+  
+  // Create vlw data
+  // vlw header
+  vlwdata = conv(thirdcol == 0 ? 1 : 2); // Glyph Count
+  vlwdata += conv(11); // Version (11)
+  vlwdata += conv(c.height); // Font size
+  vlwdata += conv(0); // ignored
+  vlwdata += conv(c.height); // Font ascend (from letter d)
+  vlwdata += conv(0); // Font descend (from letter p)
+  // Character header 1
+  vlwdata += conv(48); // Character: 0
+  vlwdata += conv(blackcrop.height); // Height
+  vlwdata += conv(blackcrop.width); // Width
+  vlwdata += conv(c.width); // Setwidth
+  vlwdata += conv(c.height - blackcrop.postop); // Topextend
+  vlwdata += conv(blackcrop.posleft); // Leftextend 
+  vlwdata += conv(0); // Padding
   if (thirdcol) {
-    vlwdata += vlwthird; //Add additional bitmap for third color
+    // Character header 2
+    vlwdata += conv(49); // Character: 1
+    vlwdata += conv(thirdcrop.height); // Height
+    vlwdata += conv(thirdcrop.width); // Width
+    vlwdata += conv(c.width); // Setwidth
+    vlwdata += conv(c.height - thirdcrop.postop); // Topextend
+    vlwdata += conv(thirdcrop.posleft); // Leftextend
+    vlwdata += conv(0); // Padding
+  }
+  
+  vlwdata += blackcrop.vlw;
+  
+  if (thirdcol) {
+    vlwdata += thirdcrop.vlw; //Add additional bitmap for third color
   }
 
   vlwdata += String.fromCharCode(11);
@@ -240,8 +305,8 @@ function redraw() {
   document.getElementById("ih").innerHTML = cheight;
   document.getElementById("ow").innerHTML = image.width;
   document.getElementById("oh").innerHTML = image.height;
-  c.width = cwidth;
-  c.height = cheight;
+  c.width = cwidth == 0 ? 1 : cwidth; // Avoid zero width
+  c.height = cheight == 0 ? 1 : cheight; // Avoid zero height
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, c.width, c.height); // Fill background
   ctx.drawImage(image, 0, 0, c.width, c.height);
@@ -256,9 +321,6 @@ function downloadVlw() {
   const abuffer = new ArrayBuffer(bl);
   let chars = new Uint8Array(abuffer);
   for (let i = 0; i < bl; i++) chars[i] = vlwdata.charCodeAt(i);
-
-  // application/x-zip-compressed - winrar archive
-  // application/x-msdownload - windows executable files
 
   const file = new File([abuffer], vlwfilename, {
     type: "application/x-msdownload"
