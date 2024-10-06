@@ -8,9 +8,9 @@ Version Date       Changes
 1.0     2024-04-21
 1.1     2024-04-21 Swapped yellow/red distance calculation
 1.2     2024-05-04 Added internal bitmap cropping to save space
+1.3     2024-10-06 Added patch-mode for whitespace elimination at x-position = 0
 -->
 <head>
-
   <meta charset='UTF-8'>
   <title>Image to VLW converter</title>
   <style>
@@ -22,7 +22,6 @@ form div {
   padding-bottom: 8px;
 }
   </style>
-
 </head>
 
 <body>
@@ -35,11 +34,11 @@ form div {
   </div>
   <div>
   <label for="color">Third e-ink color:</label>
-<select id="color" name="color" value="0" onchange="redraw();">
-  <option value="0">none</option>
-  <option value="1">red</option>
-  <option value="2">yellow</option>
-</select> 
+  <select id="color" name="color" value="0" onchange="redraw();">
+    <option value="0">none</option>
+    <option value="1">red</option>
+    <option value="2">yellow</option>
+  </select>
   </div>
   <div>
   <label for="maxw">Width (px):</label>
@@ -52,6 +51,10 @@ form div {
   <input id="lumoff" type="number" value=0 min=-127 max=127 size=4 onchange="redraw();">
   </div>
   <div>
+  <label for="xpatch" title="Apply this patch if you want the image to be displayed at x-position 0. This will prevent the font renderer from breaking the display due to whitespace elimination. Be sure to print the images in the order as noted by the converter, otherwise the patch pixel will be visible. This patch may result in larger file sizes.">Apply x-pos 0 patch</label>
+  <input id="xpatch" type="checkbox" onchange="redraw();">
+  </div>
+  <div>
   <input id="download" type="button" value="Download as VLW font" onclick="downloadVlw();" disabled>
   </div>
 </form>
@@ -59,280 +62,334 @@ form div {
 <p>Image size: <span id="iw">0</span>×<span id="ih">0</span> px (original size <span id="ow">0</span>×<span id="oh">0</span> px)<br/><br/>
 <i>Note: Black color bitmap will be mapped to font-character "0", third color bitmap to character "1".</i></p>
 <hr />
+<p id="xpatchcontainer" style="display:none;">x-pos 0 patch: <span id="xpatchmsg"></span></p>
 <p>
 <canvas id=c></canvas>
 </p>
 
 <script>
 const c = document.getElementById("c"),
-  ctx = c.getContext("2d"),
-  image = new Image();
-var  vlwdata = "",
-  vlwfilename = "image.vlw";
+	ctx = c.getContext("2d"),
+	image = new Image();
+
+var vlwdata = "",
+	vlwfilename = "image.vlw";
 
 function conv(size) {
-  return String.fromCharCode(
-    (size >> 24) & 0xff,
-    (size >> 16) & 0xff,
-    (size >> 8) & 0xff,
-    size & 0xff
-  );
+    return String.fromCharCode(
+        (size >> 24) & 0xff,
+        (size >> 16) & 0xff,
+        (size >> 8) & 0xff,
+        size & 0xff);
 }
 
 function getDistcol(r1, g1, b1, r2, g2, b2) {
-  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+    return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
 }
 
 function shiftLum(val, offset) {
-  return(Math.min(Math.max(val + offset, 0), 255));
+    return (Math.min(Math.max(val + offset, 0), 255));
 }
 
 function autocropVlw(vlwbmp, vlwwidth, vlwheight) {
-// Autocrop bitmap	
-	let i,
-	    posx = 0,
+    // Autocrop bitmap
+    let i,
+		posx = 0,
 		posy = 0,
-	    ptop = -1,
+		ptop = -1,
 		pheight = 0;
 		pleft = vlwwidth - 1;
 		pwidth = 0,
 		vlwcrop = "",
 		imax = vlwwidth * vlwheight;
 
-// Find boundaries
-	for(i = 0; i < imax; ++i, ++posx) {
-		if(posx >= vlwwidth) {
-		  posx = 0;
-		  ++posy;
-	    }
-	    if(vlwbmp.charCodeAt(i)) { // Non-white pixel
-			if(ptop == -1) // Set top
-				ptop = posy;
-			pheight = posy + 1; // Set height
-			if(pleft > posx) // Set left
-				pleft = posx;
-			if(pwidth <= posx) // Set width
-				pwidth = posx + 1;
-		}
-	}
-	if(ptop == -1) {
-    // Bitmap is completely empty - return empty bitmap	
-		ptop = 0;
-		pleft = 0;
-	} else {
-	// Now we have the boundaries - let's crop the vlw data!
-	for(i = 0, posx = 0, posy = 0; i < (vlwwidth * vlwheight); ++i, ++posx) {
-		if(posx >= vlwwidth) {
-		  posx = 0;
-		  ++posy;
-	    }
-	    if(posx >= pleft && posx < pwidth && posy >= ptop && posy < pheight) {
-		  vlwcrop += vlwbmp[i];// String.fromCharCode(vlwbmp.charCodeAt(i)); // Copy data within boundaries
-		}
-	}
-	}
-	return {
+    // Find boundaries
+    for (i = 0; i < imax; ++i, ++posx) {
+        if (posx >= vlwwidth) {
+            posx = 0;
+            ++posy;
+        }
+        if (vlwbmp.charCodeAt(i)) { // Non-white pixel
+            if (ptop == -1) // Set top
+                ptop = posy;
+            pheight = posy + 1; // Set height
+            if (pleft > posx) // Set left
+                pleft = posx;
+            if (pwidth <= posx) // Set width
+                pwidth = posx + 1;
+        }
+    }
+    if (ptop == -1) {
+        // Bitmap is completely empty - return empty bitmap
+        ptop = 0;
+        pleft = 0;
+    } else {
+        // Now we have the boundaries - let's crop the vlw data!
+        for (i = 0, posx = 0, posy = 0; i < (vlwwidth * vlwheight); ++i, ++posx) {
+            if (posx >= vlwwidth) {
+                posx = 0;
+                ++posy;
+            }
+            if (posx >= pleft && posx < pwidth && posy >= ptop && posy < pheight) {
+                vlwcrop += vlwbmp[i]; // Copy data within boundaries
+            }
+        }
+    }
+    return {
         posleft: pleft,
-		postop: ptop, 
-		width: pwidth - pleft,
+        postop: ptop,
+        width: pwidth - pleft,
         height: pheight - ptop,
-		vlw: vlwcrop,
+        vlw: vlwcrop,
     }
 }
 
 function processImg() {
+    let idata = ctx.getImageData(0, 0, c.width, c.height),
+		buffer = idata.data,
+		len = buffer.length,
+		threshold = 127,
+		i,
+		thirdcol = parseInt(document.getElementById("color").value),
+		lumoff = parseInt(document.getElementById("lumoff").value),
+		xpatch = document.getElementById("xpatch").checked,
+		distb,
+		distw,
+		distt = 1024, //Off-scale distant by default
+		vlwbitmap = "",
+		vlwthird = "",
+		x = 0,
+		y = 0,
+		xpx = 32767,
+		xpy = 0,
+		xpm = 0,
+		xpml = 0;
 
-  let idata = ctx.getImageData(0, 0, c.width, c.height),
-    buffer = idata.data,
-    len = buffer.length,
-    threshold = 127,
-    i,
-    thirdcol = parseInt(document.getElementById("color").value),
-    lumoff = parseInt(document.getElementById("lumoff").value),
-    distb,
-    distw,
-    distt = 1024, //Off-scale distant by default
-	vlwbitmap = "",
-    vlwthird = "";
-  
+    if (thirdcol == 0) // Disable x-pos 0 patch on monochrome images
+        xpatch = false;
 
-// Convert to vlw bitmap first
-  for (i = 0; i < len; i += 4) {
-	buffer[i] = shiftLum(buffer[i], lumoff);
-    buffer[i+1] = shiftLum(buffer[i+1], lumoff);
-    buffer[i+2] = shiftLum(buffer[i+2], lumoff);
-    distw = getDistcol(
-      buffer[i],
-      buffer[i + 1],
-      buffer[i + 2],
-      0xff,
-      0xff,
-      0xff
-    );
-    distb = getDistcol(
-      buffer[i],
-      buffer[i + 1],
-      buffer[i + 2],
-      0x00,
-      0x00,
-      0x00
-    );
-    if (thirdcol) {
-      // Three colors - calculate third color distance
-      distt = getDistcol(
-        buffer[i],
-        buffer[i + 1],
-        buffer[i + 2],
-        0xff,
-        thirdcol == 2 ? 0xff : 0x00,
-        0x00
-      );
+    // Convert to vlw bitmap first
+    for (i = 0; i < len; i += 4, ++x) {
+        if (x >= c.width) {
+            x = 0;
+            ++y;
+        }
+        xpml = 0;
+        buffer[i] = shiftLum(buffer[i], lumoff);
+        buffer[i + 1] = shiftLum(buffer[i + 1], lumoff);
+        buffer[i + 2] = shiftLum(buffer[i + 2], lumoff);
+        distw = getDistcol(
+                buffer[i],
+                buffer[i + 1],
+                buffer[i + 2],
+                0xff,
+                0xff,
+                0xff);
+        distb = getDistcol(
+                buffer[i],
+                buffer[i + 1],
+                buffer[i + 2],
+                0x00,
+                0x00,
+                0x00);
+        if (thirdcol) {
+            // Three colors - calculate third color distance
+            distt = getDistcol(
+                    buffer[i],
+                    buffer[i + 1],
+                    buffer[i + 2],
+                    0xff,
+                    thirdcol == 2 ? 0xff : 0x00,
+                    0x00);
+        }
+
+        if (distw < distb && distw < distt) {
+            // White is matching best
+            buffer[i] = 0xff;
+            buffer[i + 1] = 0xff;
+            buffer[i + 2] = 0xff;
+            vlwbitmap += String.fromCharCode(0x00);
+            if (thirdcol)
+                vlwthird += String.fromCharCode(0x00);
+        } else {
+            if (distb <= distw && distb < distt) {
+                // Black is matching best
+                buffer[i] = 0x00;
+                buffer[i + 1] = 0x00;
+                buffer[i + 2] = 0x00;
+                vlwbitmap += String.fromCharCode(0xff);
+                if (thirdcol)
+                    vlwthird += String.fromCharCode(0x00);
+                xpml |= 0x01;
+            } else {
+                // Third color matches best
+                buffer[i] = 0xff;
+                buffer[i + 1] = thirdcol == 1 ? 0x00 : 0xff;
+                buffer[i + 2] = 0x00;
+                vlwbitmap += String.fromCharCode(0x00);
+                vlwthird += String.fromCharCode(0xff);
+                xpml |= 0x02;
+            }
+        }
+        if ((xpml == 0x01 || xpml == 0x02) && xpx >= x) {
+            if (xpx > x) { // New boundary for patch
+                xpx = x;
+                xpy = y;
+                xpm = xpml;
+            } else {
+                xpm |= xpml;
+            }
+        }
     }
 
-    if (distw < distb && distw < distt) {
-      // White is matching best
-      buffer[i] = 0xff;
-      buffer[i + 1] = 0xff;
-      buffer[i + 2] = 0xff;
-      vlwbitmap += String.fromCharCode(0x00);
-      if (thirdcol) vlwthird += String.fromCharCode(0x00);
-    } else {
-      if (distb <= distw && distb < distt) {
-        // Black is matching best
-        buffer[i] = 0x00;
-        buffer[i + 1] = 0x00;
-        buffer[i + 2] = 0x00;
-        vlwbitmap += String.fromCharCode(0xff);
-        if (thirdcol) vlwthird += String.fromCharCode(0x00);
-      } else {
-        // Third color matches best
-        buffer[i] = 0xff;
-        buffer[i + 1] = thirdcol == 1 ? 0x00 : 0xff;
-        buffer[i + 2] = 0x00;
-        vlwbitmap += String.fromCharCode(0x00);
-        vlwthird += String.fromCharCode(0xff);
-      }
-    }
-  }
-  
-  // Crop internal bitmap data
-  const blackcrop = autocropVlw(vlwbitmap, c.width, c.height);
-  const thirdcrop = autocropVlw(vlwthird, c.width, c.height);
-  
-  // Create vlw data
-  // vlw header
-  vlwdata = conv(thirdcol == 0 ? 1 : 2); // Glyph Count
-  vlwdata += conv(11); // Version (11)
-  vlwdata += conv(c.height); // Font size
-  vlwdata += conv(0); // ignored
-  vlwdata += conv(c.height); // Font ascend (from letter d)
-  vlwdata += conv(0); // Font descend (from letter p)
-  // Character header 1
-  vlwdata += conv(48); // Character: 0
-  vlwdata += conv(blackcrop.height); // Height
-  vlwdata += conv(blackcrop.width); // Width
-  vlwdata += conv(c.width); // Setwidth
-  vlwdata += conv(c.height - blackcrop.postop); // Topextend
-  vlwdata += conv(blackcrop.posleft); // Leftextend 
-  vlwdata += conv(0); // Padding
-  if (thirdcol) {
-    // Character header 2
-    vlwdata += conv(49); // Character: 1
-    vlwdata += conv(thirdcrop.height); // Height
-    vlwdata += conv(thirdcrop.width); // Width
+    if (xpatch) { // x-pos 0 patch active?
+        if (xpm == 0x01 || xpm == 0x02) {
+            // Patch given pixel
+            let xpatchpos = xpy * c.width + xpx;
+            if (xpm == 0x01) // Black pixel at left boundary?
+                vlwthird = vlwthird.substring(0, xpatchpos) + String.fromCharCode(0xff) + vlwthird.substring(xpatchpos + 1); // Set same pixel on third color
+            else // Third color in front?
+                vlwbitmap = vlwbitmap.substring(0, xpatchpos) + String.fromCharCode(0xff) + vlwbitmap.substring(xpatchpos + 1); // Set same pixel on black color
+
+            // Add green dot to preview image
+            buffer[(xpy * c.width + xpx) * 4] = 0x00;
+            buffer[((xpy * c.width + xpx) * 4) + 1] = 0xff;
+            buffer[((xpy * c.width + xpx) * 4) + 2] = 0x00;
+
+            document.getElementById('xpatchmsg').innerHTML = "<b>" + (xpm == 0x01 ? (thirdcol == 1 ? "red" : "yellow" ) : "black") + " color</b> image patched. Print this image <b>first</b>!";
+        } else
+            document.getElementById('xpatchmsg').innerHTML = "No patch required.";
+
+        document.getElementById('xpatchcontainer').style.display = ""; // Enable message
+    } else
+        document.getElementById('xpatchcontainer').style.display = "none"; // Disable message
+
+
+    // Crop internal bitmap data
+    const blackcrop = autocropVlw(vlwbitmap, c.width, c.height),
+          thirdcrop = autocropVlw(vlwthird, c.width, c.height);
+
+    // Create vlw data
+    // vlw header
+    vlwdata = conv(thirdcol == 0 ? 1 : 2); // Glyph Count
+    vlwdata += conv(11); // Version (11)
+    vlwdata += conv(c.height); // Font size
+    vlwdata += conv(0); // ignored
+    vlwdata += conv(c.height); // Font ascend (from letter d)
+    vlwdata += conv(0); // Font descend (from letter p)
+    // Character header 1
+    vlwdata += conv(48); // Character: 0
+    vlwdata += conv(blackcrop.height); // Height
+    vlwdata += conv(blackcrop.width); // Width
     vlwdata += conv(c.width); // Setwidth
-    vlwdata += conv(c.height - thirdcrop.postop); // Topextend
-    vlwdata += conv(thirdcrop.posleft); // Leftextend
+    vlwdata += conv(c.height - blackcrop.postop); // Topextend
+    vlwdata += conv(blackcrop.posleft); // Leftextend
     vlwdata += conv(0); // Padding
-  }
-  
-  vlwdata += blackcrop.vlw;
-  
-  if (thirdcol) {
-    vlwdata += thirdcrop.vlw; //Add additional bitmap for third color
-  }
+    if (thirdcol) {
+        // Character header 2
+        vlwdata += conv(49); // Character: 1
+        vlwdata += conv(thirdcrop.height); // Height
+        vlwdata += conv(thirdcrop.width); // Width
+        vlwdata += conv(c.width); // Setwidth
+        vlwdata += conv(c.height - thirdcrop.postop); // Topextend
+        vlwdata += conv(thirdcrop.posleft); // Leftextend
+        vlwdata += conv(0); // Padding
+    }
 
-  vlwdata += String.fromCharCode(11);
-  vlwdata += "Image";
-  vlwdata += String.fromCharCode(0);
-  vlwdata += String.fromCharCode(11);
-  vlwdata += "Image";
-  vlwdata += String.fromCharCode(0);
-  // update canvas with the resulting bitmap data
-  ctx.putImageData(idata, 0, 0);
+    vlwdata += blackcrop.vlw;
+
+    if (thirdcol) {
+        vlwdata += thirdcrop.vlw; //Add additional bitmap for third color
+    }
+
+    vlwdata += String.fromCharCode(11);
+    vlwdata += "Image";
+    vlwdata += String.fromCharCode(0);
+    vlwdata += String.fromCharCode(11);
+    vlwdata += "Image";
+    vlwdata += String.fromCharCode(0);
+    // update canvas with the resulting bitmap data
+    ctx.putImageData(idata, 0, 0);
 }
 
 function upload(input) {
-  if (input.files && input.files[0]) {
-    vlwfilename = input.files[0].name + ".vlw";
-    const reader = new FileReader();
-    reader.readAsDataURL(input.files[0]);
-    reader.onload = () => {
-      image.src = reader.result;
-      image.onload = () => {
-        redraw();
-      };
-    };
-  }
+    if (input.files && input.files[0]) {
+        vlwfilename = input.files[0].name + ".vlw";
+        const reader = new FileReader();
+        reader.readAsDataURL(input.files[0]);
+        reader.onload = () => {
+            image.src = reader.result;
+            image.onload = () => {
+                redraw();
+            };
+        };
+    }
 }
 
 function redraw() {
-  if(image.width) {
-  document.getElementById('download').disabled = false; // Enable download button
-  let maxw = parseInt(document.getElementById("maxw").value);
-  let maxh = parseInt(document.getElementById("maxh").value);
+    if (image.width) {
+        document.getElementById('download').disabled = false; // Enable download button
 
-  let cwidth = image.width,
-    cheight = image.height,
-    resizefactor = 1;
-  if (maxw) {
-    cwidth = maxw;
-    if (!maxh) {
-      resizefactor = maxw / image.width;
-      cheight = image.height * resizefactor;
+        let maxw = parseInt(document.getElementById("maxw").value),
+			maxh = parseInt(document.getElementById("maxh").value),
+			thirdcol = parseInt(document.getElementById("color").value),
+			cwidth = image.width,
+			cheight = image.height,
+			resizefactor = 1;
+        if (thirdcol == 0) {
+            document.getElementById("xpatch").checked = false;
+            document.getElementById('xpatch').disabled = true;
+        } else
+            document.getElementById('xpatch').disabled = false;
+        if (maxw > 0) {
+            cwidth = maxw;
+            if (!maxh) {
+                resizefactor = maxw / image.width;
+                cheight = image.height * resizefactor;
+            }
+        }
+        if (maxh > 0) {
+            cheight = maxh;
+            if (!maxw) {
+                resizefactor = maxh / image.height;
+                cwidth = image.width * resizefactor;
+            }
+        }
+        cwidth = Math.floor(cwidth);
+        cheight = Math.floor(cheight);
+        document.getElementById("iw").innerHTML = cwidth;
+        document.getElementById("ih").innerHTML = cheight;
+        document.getElementById("ow").innerHTML = image.width;
+        document.getElementById("oh").innerHTML = image.height;
+        c.width = cwidth == 0 ? 1 : cwidth; // Avoid zero width
+        c.height = cheight == 0 ? 1 : cheight; // Avoid zero height
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, c.width, c.height); // Fill background
+        ctx.drawImage(image, 0, 0, c.width, c.height);
+        processImg();
+    } else {
+        console.log("No image loaded yet!");
     }
-  }
-  if (maxh) {
-    cheight = maxh;
-    if (!maxw) {
-      resizefactor = maxh / image.height;
-      cwidth = image.width * resizefactor;
-    }
-  }
-  cwidth = Math.floor(cwidth);
-  cheight = Math.floor(cheight);
-  document.getElementById("iw").innerHTML = cwidth;
-  document.getElementById("ih").innerHTML = cheight;
-  document.getElementById("ow").innerHTML = image.width;
-  document.getElementById("oh").innerHTML = image.height;
-  c.width = cwidth == 0 ? 1 : cwidth; // Avoid zero width
-  c.height = cheight == 0 ? 1 : cheight; // Avoid zero height
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, c.width, c.height); // Fill background
-  ctx.drawImage(image, 0, 0, c.width, c.height);
-  processImg();
-  } else {
-   console.log("No image loaded yet!");
-  }
 }
 
 function downloadVlw() {
-  const bl = vlwdata.length;
-  const abuffer = new ArrayBuffer(bl);
-  let chars = new Uint8Array(abuffer);
-  for (let i = 0; i < bl; i++) chars[i] = vlwdata.charCodeAt(i);
+    const bl = vlwdata.length,
+		abuffer = new ArrayBuffer(bl);
+    let chars = new Uint8Array(abuffer);
+    
+	for(let i = 0; i < bl; i++)
+        chars[i] = vlwdata.charCodeAt(i);
 
-  const file = new File([abuffer], vlwfilename, {
-    type: "application/x-msdownload"
-  });
-
-  const url = URL.createObjectURL(file);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = file.name;
-  a.click();
-  URL.revokeObjectURL(url);
+	const file = new File([abuffer], vlwfilename, {
+        type: "application/x-msdownload"
+    }),
+		url = URL.createObjectURL(file),
+		a = document.createElement("a");
+		
+	a.href = url;
+	a.download = file.name;
+	a.click();
+	URL.revokeObjectURL(url);
 }
 
 </script>
