@@ -14,7 +14,7 @@ It is suggested to prepare the image file for conversion first (e.g. by removing
 2. Select the third color of the display (either red, yellow or none).
 3. Enter a width and/or height of the target image or leave both fields empty to use the original size. If you enter either width or height, the image will be scaled proportionally to that size. Entering both values will resize the image to the given dimensions.
 4. Change the luminance offset value as required. Sometimes it is necessary to change that value to get better results with color separation.
-5. If you are creating a multi-color image and need to place it at x-position 0 (which should be avoided - see [Known Issues](#known-issues) below), then enable the "x-pos 0 patch".
+5. If you are creating a multi-color image and need to place it at x-position 0 (which should be avoided - see [Known issues](#known-issues) below), then enable the "x-pos 0 patch".
 6. Click the download-button to download the VLW-file. It will be saved to the download directory.
 7. Upload the VLW-file to the "fonts"-directory on your OpenEPaperLink access point. (Open ``http://<AP-IP-address>/edit`` to access the file browser of the access point.)
 
