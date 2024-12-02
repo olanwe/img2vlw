@@ -31,5 +31,10 @@ Example (for a three-color image):
 
 ## Known issues
 
-If the image is placed on the far left of the display (x-pos = 0), the font renderer will remove all white space on the left side of the character. This can break multicolor images because both color planes are shifted to the left individually (see [Issue #1](https://github.com/olanwe/img2vlw/issues/1)).
-To avoid this situation, you can simply position the image at x ≥ 1 instead of x = 0. If this is not possible, then the "x-pos 0 patch" must be activated. This will create an additional pixel on the shifted color plane so that both color planes start at the same x-position. In this case it is important to print the colors in the order given by the converter. For example, if the patch is applied to the color plane, it must be printed first. In this case, the patched pixel will be overwritten by the pixel on the other color plane, so it will not be visible. Keep in mind that the whitespace removal will still shift the image to the left, removing all blank space, and that the patch will result in larger VLW-files.
+### Whitespace removal on x-pos = 0
+If the image is placed on the far left of the display (x-pos = 0), the font renderer will remove all whitespace on the left side of the character. This can break multicolor images because both color planes are shifted to the left individually (see [Issue #1](https://github.com/olanwe/img2vlw/issues/1)).
+To avoid this situation, you can simply position the image at x &gt; 0 or x &lt; 0 instead of x = 0. If this is not possible, then the "x-pos 0 patch" must be activated. This will create an additional pixel on the shifted color plane so that both color planes start at the same x-position. In this case it is important to print the colors in the order given by the converter. For example, if the patch is applied to the color plane, it must be printed first. In this case, the patched pixel will be overwritten by the pixel on the other color plane, so it will not be visible. Keep in mind that the whitespace removal will still shift the image to the left, removing all blank space, and that the patch will result in larger VLW-files.
+
+### Character bitmap dimensions may not exceed 255 pixels
+VLW characters larger than 255 pixels may not be rendered correctly by OpenEPaperLink. This seems to be a limitation of the internal VLW renderer, which only reads the first byte and ignores the rest.  
+The converter will warn you if your image exceeds these values.

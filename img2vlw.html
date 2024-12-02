@@ -9,6 +9,7 @@ Version Date       Changes
 1.1     2024-04-21 Swapped yellow/red distance calculation
 1.2     2024-05-04 Added internal bitmap cropping to save space
 1.3     2024-10-06 Added patch-mode for whitespace elimination at x-position = 0
+1.4     2024-12-02 Add maximum dimension warning
 -->
 <head>
   <meta charset='UTF-8'>
@@ -20,6 +21,24 @@ Version Date       Changes
 
 form div {
   padding-bottom: 8px;
+}
+
+.infomsg {
+  padding: 8px; 
+  margin: 16px 0px 16px 0px; 
+  border: 2px solid #b6effb; 
+  background-color: #cff4fc; 
+  border-radius: 8px; 
+  color: #055160;
+}
+
+.warningmsg {
+  padding: 8px; 
+  margin: 16px 0px 16px 0px; 
+  border: 2px solid #ffecb5; 
+  background-color: #fff3cd; 
+  border-radius: 8px; 
+  color: #664d03;
 }
   </style>
 </head>
@@ -62,7 +81,8 @@ form div {
 <p>Image size: <span id="iw">0</span>×<span id="ih">0</span> px (original size <span id="ow">0</span>×<span id="oh">0</span> px)<br/><br/>
 <i>Note: Black color bitmap will be mapped to font-character "0", third color bitmap to character "1".</i></p>
 <hr />
-<p id="xpatchcontainer" style="display:none;">x-pos 0 patch: <span id="xpatchmsg"></span></p>
+<p id="xpatchcontainer" class="infomsg" style="display:none;">x-pos 0 patch: <span id="xpatchmsg"></span></p>
+<p id="msgcontainer" style="display:none;"><span id="msgtxt"></span></p>
 <p>
 <canvas id=c></canvas>
 </p>
@@ -264,10 +284,18 @@ function processImg() {
     } else
         document.getElementById('xpatchcontainer').style.display = "none"; // Disable message
 
-
     // Crop internal bitmap data
     const blackcrop = autocropVlw(vlwbitmap, c.width, c.height),
           thirdcrop = autocropVlw(vlwthird, c.width, c.height);
+
+    // Bitmap too large warning
+    if(blackcrop.width > 255 || blackcrop.height > 255 || thirdcrop.width > 255 || thirdcrop.height > 255) {
+	  document.getElementById('msgtxt').innerHTML = "<b>WARNING:</b> At least one bitmap dimension exceeds 255 pixels! Due to an internal limitation of the OpenEPaperLink VLW-renderer, the image may not be displayed correctly!<br/>Actual bitmap dimensions: black " + blackcrop.width + "×" + blackcrop.height + " px" + (thirdcol ? (thirdcol == 1 ? ", red " : ", yellow " ) + thirdcrop.width + "×" + thirdcrop.height + " px" : "");
+	  
+	   document.getElementById('msgcontainer').style.display = "";
+	   document.getElementById('msgcontainer').className = "warningmsg";
+	} else
+	   document.getElementById('msgcontainer').style.display = "none";
 
     // Create vlw data
     // vlw header
