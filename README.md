@@ -1,5 +1,9 @@
 # img2vlw
 
+> **Successor project: [OEPL-Toolbox](https://github.com/olanwe/oepl-toolbox)**  
+> img2vlw has evolved into a browser-based image editor, converter and LED designer, expanded with AI assistance. New features and further development are available in OEPL-Toolbox. This repository remains available as the original converter.  
+> [Download the standalone toolbox](https://github.com/olanwe/oepl-toolbox/blob/main/oepl-toolbox.html) · [English instructions](https://github.com/olanwe/oepl-toolbox/blob/main/README.en.md)
+
 Simple image to VLW converter for e-ink displays being used with [OpenEPaperLink](https://openepaperlink.de/).
 
 Everything is included in the [img2vlw.html](img2vlw.html) itself. Download it for offline usage or [run it online](http://htmlpreview.github.io/?https://github.com/olanwe/img2vlw/blob/main/img2vlw.html)!  
